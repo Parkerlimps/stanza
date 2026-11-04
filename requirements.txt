@@ -1,0 +1,16 @@
+# Stanza 运行依赖（Python 3.10+）
+
+# ---- GUI 外壳 ----
+PySide6
+python-mpv
+
+# ---- 分析链路（pipeline/ 由外部 Python 执行，不打进 exe）----
+opencv-python
+numpy
+
+# ---- 可选：语音转写后端（二选一，首次运行会下载模型）----
+# faster-whisper
+# sherpa-onnx
+
+# ---- 可选：硬字幕 OCR ----
+# rapidocr-onnxruntime

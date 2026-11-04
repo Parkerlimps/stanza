@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stanza</title>
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app" class="idle">
+
+  <div class="stage">
+    <video id="video" playsinline preload="metadata"></video>
+  </div>
+
+  <header class="topbar">
+    <div class="titleblock">
+      <h1 id="fileName">未加载视频</h1>
+      <p id="fileMeta"></p>
+    </div>
+    <div class="nowplaying" id="nowPlaying"></div>
+  </header>
+
+  <aside class="drawer" id="drawer">
+    <div class="drawer-head">
+      <span>章节</span>
+      <span class="badge" id="chapterCount">0</span>
+      <button class="mini" id="btnRetitle" hidden>重做标题</button>
+    </div>
+    <div class="drawer-body" id="chapterList"></div>
+  </aside>
+
+  <div class="job" id="job" hidden>
+    <div class="job-head">
+      <span class="job-title" id="jobTitle">正在分析章节</span>
+      <span class="job-pct" id="jobPct">0%</span>
+    </div>
+    <div class="job-track"><div class="job-fill" id="jobFill"></div></div>
+    <div class="job-foot">
+      <span id="jobStage">准备中…</span>
+      <span id="jobEta"></span>
+    </div>
+  </div>
+
+  <div class="dock" id="dock">
+    <div class="rail" id="rail">
+      <div class="segments" id="segments"></div>
+      <div class="ticks" id="ticks"></div>
+      <div class="edge" id="edge"></div>
+    </div>
+    <div class="controls">
+      <button class="btn" id="btnPrev" title="上一段 (P)" aria-label="上一段">
+        <svg class="solid" viewBox="0 0 24 24"><path d="M18 5.2a.6.6 0 0 1 .92.51v12.58a.6.6 0 0 1-.92.51L9 12.51V18a1 1 0 0 1-2 0V6a1 1 0 0 1 2 0v5.49l9-6.29z"/></svg>
+      </button>
+      <button class="btn play" id="btnPlay" title="播放 / 暂停 (空格)" aria-label="播放">
+        <svg id="icoPlay" class="solid" viewBox="0 0 24 24"><path d="M7.5 4.6a.6.6 0 0 1 .92-.5l11 7.4a.6.6 0 0 1 0 .99l-11 7.4a.6.6 0 0 1-.92-.5V4.6z"/></svg>
+        <svg id="icoPause" class="solid hidden" viewBox="0 0 24 24"><rect x="6.5" y="4.5" width="3.6" height="15" rx="1.2"/><rect x="13.9" y="4.5" width="3.6" height="15" rx="1.2"/></svg>
+      </button>
+      <button class="btn" id="btnNext" title="下一段 (N)" aria-label="下一段">
+        <svg class="solid" viewBox="0 0 24 24"><path d="M6 5.2a.6.6 0 0 0-.92.51v12.58a.6.6 0 0 0 .92.51L15 12.51V18a1 1 0 0 0 2 0V6a1 1 0 0 0-2 0v5.49L6 5.2z"/></svg>
+      </button>
+
+      <div class="time">
+        <span id="cur">00:00</span><span class="dim">/</span><span id="dur" class="dim">00:00</span>
+      </div>
+
+      <div class="nowmid" id="nowMid"></div>
+
+      <div class="spacer"></div>
+
+      <button class="chip accent" id="btnAnalyze" hidden>分析章节</button>
+      <button class="chip" id="btnSpeed" title="倍速 ( [ / ] )">1.0×</button>
+
+      <div class="vol" id="vol">
+        <button class="btn" id="btnMute" aria-label="静音">
+          <svg id="icoVol" class="line" viewBox="0 0 24 24"><path d="M11 5 6.5 9H3v6h3.5L11 19V5z"/><path d="M15.2 9.2a4 4 0 0 1 0 5.6"/><path d="M17.8 6.6a7.6 7.6 0 0 1 0 10.8"/></svg>
+        </button>
+        <div class="voltrack" id="volTrack"><div class="volfill" id="volFill"></div></div>
+      </div>
+
+      <button class="btn" id="btnDrawer" title="章节列表 (C)" aria-label="章节列表">
+        <svg class="line" viewBox="0 0 24 24"><path d="M4 7h16M4 12h11M4 17h14"/></svg>
+      </button>
+      <button class="btn" id="btnFull" title="全屏 (F)" aria-label="全屏">
+        <svg class="line" viewBox="0 0 24 24"><path d="M4 9.5V4h5.5M20 14.5V20h-5.5M20 9.5V4h-5.5M4 14.5V20h5.5"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="peek" id="peek">
+    <img id="peekImg" alt="" />
+    <div class="peek-info">
+      <span class="peek-title" id="peekTitle"></span>
+      <span class="peek-time" id="peekTime"></span>
+    </div>
+  </div>
+
+  <div class="osd" id="osd"></div>
+  <div class="loading" id="loading">正在加载…</div>
+
+  <div class="modal" id="llmModal" hidden>
+    <div class="modal-card">
+      <h2>本地大模型</h2>
+      <p class="hint">用于把台词压成章节标题。留空则用规则截取台词。</p>
+      <label>接口地址
+        <input id="llmUrl" placeholder="http://127.0.0.1:8080/v1" spellcheck="false" />
+      </label>
+      <label>模型名
+        <input id="llmModel" placeholder="qwen3.5-4b-int4" spellcheck="false" />
+      </label>
+      <label>启动命令（可选）
+        <input id="llmLaunch" placeholder="D:\WorkSpace\npu-llm\start.bat" spellcheck="false" />
+      </label>
+      <p class="hint">连不上时自动执行这条命令，并等待模型加载完成。留空则只做检测。</p>
+      <div class="modal-foot">
+        <button class="mini" id="llmCancel">取消</button>
+        <button class="mini primary" id="llmSave">保存并重做</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="player.js"></script>
+</body>
+</html>

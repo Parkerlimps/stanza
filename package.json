@@ -1,0 +1,18 @@
+{
+  "name": "stanza",
+  "productName": "Stanza",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stanza — a local video player with automatic chapters",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "serve": "node serve.js",
+    "build": "node build.js"
+  },
+  "author": "PALI",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.7.7"
+  }
+}

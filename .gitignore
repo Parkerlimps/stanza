@@ -1,0 +1,38 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# ---- 打包产物 / 第三方二进制 ----
+# libmpv-2.dll (~119 MB) 和 ffmpeg.exe (~100 MB) 超过 GitHub 单文件 100 MB 上限，
+# dist/ 打包目录、node_modules/ 也不进仓库，获取方式见 README 第 6 节。
+build/
+dist/
+vendor/
+node_modules/
+
+# ---- 测试素材与运行中间产物 ----
+samples/
+screens/
+data/
+*.log
+cmp_*.json
+
+# ---- 开发期一次性诊断脚本 ----
+check.js
+check_desktop.js
+test_llm.js
+
+# ---- 本机解释器路径（含个人目录，不提交） ----
+stanza/python.local.txt
+
+# ---- 工作区记忆 / 编辑器 / 系统 ----
+.workbuddy/
+.workbuddy-ai/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
