@@ -14,7 +14,7 @@ from PySide6.QtGui import (QColor, QFont, QIcon, QPainter, QPainterPath, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (QWidget, QLabel, QToolButton, QSlider, QHBoxLayout,
                                QVBoxLayout, QFrame, QSizePolicy, QScrollArea,
-                               QStackedWidget)
+                               QStackedWidget, QMenu)
 
 import mpv
 
@@ -443,6 +443,7 @@ class Dock(QFrame):
     fullClicked = Signal()
     analyzeClicked = Signal()
     retitleClicked = Signal()
+    countChanged = Signal(object)      # "auto" 或 16/24/32/48
     volumeChanged = Signal(int)
     seekRequested = Signal(float)
 
@@ -527,6 +528,33 @@ class Dock(QFrame):
         row.addWidget(self.timeLbl)
         row.addStretch(1)
 
+        # 章节数：自动 = 由模型的段落判断决定（配置存在 chapterCount）
+        self.btnCount = QToolButton()
+        self.btnCount.setCursor(Qt.PointingHandCursor)
+        self.btnCount.setToolTip("章节数。自动 = 按模型判出的段落数量决定")
+        self.btnCount.setStyleSheet(
+            "QToolButton{border:1px solid %s;border-radius:10px;"
+            "padding:5px 18px 5px 10px;font-size:12px;font-weight:600;"
+            "color:%s;background:transparent;}"
+            "QToolButton:hover{background:rgba(0,0,0,0.05);}"
+            "QToolButton::menu-indicator{subcontrol-position:right center;"
+            "subcontrol-origin:padding;right:6px;width:8px;}" % (STROKE, FG))
+        self.btnCount.setPopupMode(QToolButton.InstantPopup)
+        self.countMenu = QMenu(self.btnCount)
+        self.countMenu.setStyleSheet(
+            "QMenu{background:#fff;border:1px solid rgba(0,0,0,0.12);"
+            "border-radius:10px;padding:4px;}"
+            "QMenu::item{padding:6px 20px;border-radius:6px;font-size:12px;color:%s;}"
+            "QMenu::item:selected{background:rgba(0,0,0,0.06);}" % FG)
+        for _label, _val in (("自动（按内容）", "auto"), ("16 章", 16), ("24 章", 24),
+                             ("32 章", 32), ("48 章", 48)):
+            _act = self.countMenu.addAction(_label)
+            _act.setData(_val)
+            _act.triggered.connect(lambda _=False, v=_val: self.countChanged.emit(v))
+        self.btnCount.setMenu(self.countMenu)
+        self.set_count("auto")
+        row.addWidget(self.btnCount)
+
         self.btnAnalyze = QToolButton()
         self.btnAnalyze.setText("分析章节")
         self.btnAnalyze.setCursor(Qt.PointingHandCursor)
@@ -604,6 +632,14 @@ class Dock(QFrame):
 
     def set_speed(self, v):
         self.btnSpeed.setText(f"{v:g}×")
+
+    def set_count(self, v):
+        """v: "auto" 或整数。"""
+        auto = str(v).strip().lower() == "auto"
+        self.btnCount.setText("自动" if auto else f"{int(v)} 章")
+        self.btnCount.setToolTip(
+            "章节数：自动 = 按模型判出的段落数量决定"
+            if auto else f"章节数：固定 {int(v)} 章")
 
     def set_volume(self, v):
         self.vol.set_value(v)

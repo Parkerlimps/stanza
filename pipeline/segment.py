@@ -29,6 +29,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 MIN_SCORE = 0.5          # 低于这个分数当作"没有转折"
 SNAP = 8.0               # 模型给的时间点最多吸附到 8 秒内最近的一句台词
 MAX_LINES = 90           # 单个窗口最多喂多少句，防止字幕特密的片子炸上下文
+MAX_AT = 1800.0          # 相对秒的合理上限，超过必然是模型把相对/绝对时间搞混了
 
 PROMPT = """你在给一部影片划分剧情段落。
 
@@ -132,7 +133,7 @@ def _parse_point(content: str):
         score = float(obj.get("score", 0))
     except (TypeError, ValueError):
         return -1.0, 0.0
-    if at < 0 or score <= 0:
+    if at < 0 or score <= 0 or at > MAX_AT:
         return -1.0, 0.0
     return at, max(0.0, min(1.0, score))
 
@@ -172,6 +173,10 @@ def score(cues, cands, base_url: str, model: str, half: float = 60.0, workers: i
         if at < 0 or s < MIN_SCORE:
             return None
         abs_t = _snap(lo + at, cue_times, lo, hi)
+        # 吸附失败又落在全片台词范围外的点直接丢。这种点会进 semantic，
+        # 而 _fuse_semantic 再宽也只能挡一次，别让它污染 DP 的终点。
+        if not (cue_times[0] - 1.0 <= abs_t <= cue_times[-1] + 1.0):
+            return None
         return abs_t, s
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:

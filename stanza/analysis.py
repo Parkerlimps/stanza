@@ -87,8 +87,11 @@ class AnalysisRunner(QObject):
         self.log_line.emit(f"$ {py} analyze.py " + " ".join(args))
         self.proc.start(py, [str(script), *args])
 
-    def analyze_video(self, video: str, out_dir: Path, cfg: dict, count: int = 32,
+    def analyze_video(self, video: str, out_dir: Path, cfg: dict, count=None,
                       use_llm: bool = True):
+        # count: "auto" 交给模型的段落判断，或 16/24/32/48 固定值
+        if count is None:
+            count = cfg.get("chapterCount", "auto")
         args = [video, "--out", str(out_dir), "--reuse", str(out_dir),
                 "--count", str(count), "--jobs", "0", "--model", "small"]
         if use_llm and cfg.get("llmUrl") and cfg.get("llmModel"):

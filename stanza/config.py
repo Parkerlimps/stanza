@@ -13,6 +13,8 @@ DEFAULTS = {
     "llmModel": "",
     "llmLaunch": "",
     "llmWait": 180,
+    # "auto" 表示由模型的段落判断决定章节数；也可存 16 / 24 / 32 / 48
+    "chapterCount": "auto",
 }
 
 

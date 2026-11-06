@@ -220,6 +220,38 @@ def detect_shots(scores, threshold: float, min_gap: float):
 
 # ---------------------------------------------------------------- 章节聚合
 
+# 章节数的绝对上下界。这两个值不参与"模型说什么就是什么"，
+# 因为模型能判断哪里翻篇，判断不了"多长一段对人才有意义"。
+MIN_CHAPTER = 60.0    # 再短就不像章节了：60 秒一段的列表，扫一遍比自己拖还慢
+MAX_CHAPTER = 420.0   # 再长就失去导航价值：7 分钟以上，拖进度条反而更省事
+
+
+def model_count(semantic, duration):
+    """由模型的逐点判断反推章节数，返回 (章节数, 置信度总和)。
+
+    刻意不直接问模型「这部片子该分几章」：它对全局数量没有可靠标定，
+    同一个 prompt 换部片子能给出 6 到 60 这种跨量级的答案，且无法校验。
+
+    但每个候选点的「这里有没有新段落开始 + 把握多大」是逐点独立判断的，
+    按置信度加权求和，得到的就是模型认为的段落数——两个 0.5 的转折
+    等价于一个 1.0 的转折。章节数完全由模型决定，上下界由长度兜住。
+    """
+    if not semantic:
+        return 0, 0.0
+    weighted = sum(semantic.values())
+    lo = max(2, math.ceil(duration / MAX_CHAPTER))
+    hi = max(lo, math.floor(duration / MIN_CHAPTER))
+    return max(lo, min(hi, max(1, int(round(weighted))))), weighted
+
+
+def chapter_params(duration, n):
+    """按章节数推算 (目标长度, 最短, 最长)。"""
+    target = max(12.0, duration / max(1, n))
+    min_len = max(5.0, target * 0.45)
+    max_len = max(min_len * 2.5, target * 3.5)
+    return target, min_len, max_len
+
+
 def fill_long_gaps(cands, max_len, step):
     """在过长的空档里补「虚拟切点」（强度 0）。
 
@@ -241,16 +273,21 @@ def fill_long_gaps(cands, max_len, step):
     return out
 
 
-def _fuse_semantic(cands, semantic, shot_scale=0.08):
+def _fuse_semantic(cands, semantic, duration, shot_scale=0.08):
     """
     把大模型给的分数并进候选切点。
 
     镜头分数和语义分数不是一回事：前者说「画面变了」，后者说「故事翻篇了」。
     语义模式下镜头点只当低权重参考，否则 3000 多个切点每个都带一点奖励，
     加起来足以把 32 章切成 39 章——每刀都"稍微划算"，但没人想要 39 章。
+
+    duration 用来丢弃越界点：模型偶尔会给出窗口外的秒数（相对/绝对搞混），
+    那种点如果排在末尾，DP 的终点就不是片尾了，章节会跑到 duration 之外。
     """
     pts = [[t, shot_scale * min(1.0, d)] for t, d in cands]
     for t, s in semantic.items():
+        if not (0.5 < t < duration - 0.5):
+            continue
         for p in pts:
             if abs(p[0] - t) <= 3.0:
                 p[1] = max(p[1], s)
@@ -281,7 +318,7 @@ def build_chapters(cuts, duration, target, min_len, max_len, semantic=None, sema
     # 语义点必须赶在「切点太少就不分章」之前并进来：
     # 静态机位的片子可以一个镜头切点都没有，但剧情照样翻篇
     if semantic:
-        cands = _fuse_semantic(cands, semantic)
+        cands = _fuse_semantic(cands, semantic, duration)
 
     if len(cands) <= 2 or duration < min_len * 1.5:
         return [(0.0, duration, 0.0)]
@@ -438,7 +475,9 @@ def main():
     ap.add_argument("--sample-fps", type=float, default=5.0)
     ap.add_argument("--thumb-width", type=int, default=480)
     ap.add_argument("--jobs", type=int, default=0, help="并行进程数，0 表示按 CPU 自动")
-    ap.add_argument("--count", type=int, default=0, help="期望章节数，给了就按它推算目标长度")
+    ap.add_argument("--count", default="auto",
+                    help="期望章节数；auto 表示由模型的段落判断决定，"
+                         "其他值按数字处理（传 0 等同于 auto）")
     ap.add_argument("--asr", choices=["auto", "off"], default="auto", help="没有字幕时是否转写生成段名")
     ap.add_argument("--two-stage", action="store_true", dest="two_stage",
                     help="标题分两步生成（先摘要再起名），慢 3 倍，小模型收益不明显")
@@ -501,11 +540,18 @@ def main():
     jobs = args.jobs if args.jobs > 0 else max(2, min(6, (os.cpu_count() or 4) // 2 - 1))
     if duration < 120:
         jobs = 1
-    if args.count > 0:
-        args.target = max(12.0, duration / args.count)
-        # 目标长度变了，最短/最长段也得跟着走，否则短片上约束互相打架
-        args.min_len = max(5.0, args.target * 0.45)
-        args.max_len = max(args.min_len * 2.5, args.target * 3.5)
+
+    # count 可以是数字，也可以是 auto。auto 要等模型判完段落才知道，
+    # 所以这里先只处理固定值；auto 在语义分段之后补算并覆盖这几个参数。
+    count_req = 0
+    raw_count = str(args.count).strip().lower()
+    if raw_count not in ("auto", "0", ""):
+        try:
+            count_req = max(1, int(float(raw_count)))
+        except ValueError:
+            sys.exit(f"--count 需要数字或 auto，收到 {args.count!r}")
+    if count_req:
+        args.target, args.min_len, args.max_len = chapter_params(duration, count_req)
 
     # 复用已算好的镜头切点：逐帧扫描是整条链路最贵的一步，
     # 只调分段参数时没必要重来
@@ -576,7 +622,16 @@ def main():
     semantic = {}
     seg_mode = "equal"
     if cues and args.segment in ("auto", "llm") and args.llm and args.llm_model and _segment:
-        step = args.seg_step if args.seg_step > 0 else max(90.0, args.target * 0.7)
+        # 候选点间隔只跟片长走，不跟章节数走：章节数要等模型判完才知道，
+        # 用它反推间隔会形成循环依赖。按 ~48 个点的预算撒，再用 2*half 压住——
+        # 相邻窗口必须重叠，否则落在两窗口缝隙里的转折永远没被问过
+        # （2 小时片原本间隔 157s、窗口 ±60s，中间 37s 是盲区）。
+        budget = 48
+        if args.seg_step > 0:
+            step = args.seg_step          # 显式指定就尊重，出了盲区是调用方的选择
+        else:
+            step = max(90.0, duration / budget)
+            step = min(step, 2.0 * args.seg_window)
         cands_seg = _segment.candidates(duration, step)
         print(f"[4/5] 语义分段  候选 {len(cands_seg)} 个，间隔 {step:.0f}s")
         emit({"stage": "segment", "label": "大模型判断段落边界", "pct": 86.0})
@@ -600,6 +655,23 @@ def main():
     elif cues:
         why = f"segment={args.segment}" if (args.llm and args.llm_model) else "没有配置大模型"
         print(f"[4/5] 语义分段  跳过（{why}）")
+
+    # 章节数定案：固定值直接用；auto 则取模型的段落判断。
+    # 没有语义信号时 auto 必须退回一个固定值——此时 args.target 还是命令行默认的
+    # 40 秒，直接拿去 DP 会把两小时的片子切成 180 章。
+    count_used, count_mode, count_weighted = count_req, "fixed", 0.0
+    if not count_req:
+        n, count_weighted = model_count(semantic, duration)
+        if n:
+            count_used, count_mode = n, "model"
+        else:
+            count_used, count_mode = 32, "default"
+        args.target, args.min_len, args.max_len = chapter_params(duration, count_used)
+        if count_mode == "model":
+            print(f"      模型判定 {count_weighted:.1f} 个段落 -> {count_used} 章"
+                  f"（{MIN_CHAPTER:.0f}s ~ {MAX_CHAPTER:.0f}s 兜底）")
+        else:
+            print(f"      没有语义信号，章节数退回 {count_used}")
 
     print(f"      聚合章节  target={args.target:.0f}s  模式 {seg_mode}")
     emit({"stage": "merge", "label": "归并剧情段落", "pct": 95.0})
@@ -713,6 +785,9 @@ def main():
             "text_source": text_source,
             "semantic_points": len(semantic),
             "cues": len(cues),
+            "count": count_used,
+            "count_mode": count_mode,        # fixed / model / default
+            "count_weighted": round(count_weighted, 2),
         },
         "chapters": items,
         "shots": [{"t": round(t, 3), "score": round(d, 2)} for t, d in cuts],

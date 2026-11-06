@@ -360,8 +360,10 @@ class MainWindow(QMainWindow):
         d.fullClicked.connect(self.toggle_fullscreen)
         d.analyzeClicked.connect(self.start_analyze)
         d.retitleClicked.connect(self.start_retitle)
+        d.countChanged.connect(self._on_count_changed)
         d.volumeChanged.connect(self.set_volume)
         d.seekRequested.connect(self._seek)
+        d.set_count(self.cfg.get("chapterCount", "auto"))
         self.rail = d.rail
         self.rail.activeChanged.connect(self._on_chapter_change)
         self.rail.hoverChanged.connect(self._on_hover)
@@ -700,12 +702,18 @@ class MainWindow(QMainWindow):
         self.dock.set_job(2, "模型未就绪，用台词截断起标题")
         self._dispatch(False)
 
+    def _on_count_changed(self, v):
+        """章节数只影响下一次分析；当前结果不重跑（重跑要几分钟，太打断）。"""
+        self.cfg = save_config({"chapterCount": v})
+        self.dock.set_count(v)
+
     def _dispatch(self, use_llm: bool):
         if self._job_kind == "retitle":
             self.runner.retitle(out_dir_for(self.current_path), self.cfg, use_llm=use_llm)
         else:
+            # count 不在这里传：analysis.py 统一从 cfg 的 chapterCount 读，单一真相
             self.runner.analyze_video(self.current_path, out_dir_for(self.current_path),
-                                      self.cfg, count=32, use_llm=use_llm)
+                                      self.cfg, use_llm=use_llm)
 
     def start_analyze(self):
         if not self.current_path or self.runner.running() or self._llm_busy():
